@@ -6,29 +6,21 @@
 
 ## Overview
 
-This lab focused on configuring and testing firewall rules using **OPNsense**.
+This lab focused on using OPNsense to create and test firewall rules. I tested how the firewall can block specific types of traffic while allowing other traffic to continue working.
 
-The main purpose was to understand how a firewall controls network traffic based on the source, destination, protocol, and port.
-
-During the lab, I created firewall rules to:
-
-* Block ICMP traffic to `1.1.1.1`
-* Block outbound HTTP traffic on TCP port `80`
-* Allow HTTPS traffic on TCP port `443`
-* Check firewall logs
-* Observe network traffic using packet capture
-* Restore the firewall configuration after testing
+The main tests were blocking ICMP traffic to `1.1.1.1` and blocking outbound HTTP traffic on TCP port `80`, while confirming that HTTPS traffic on TCP port `443` was still allowed.
 
 ---
 
 ## Lab Environment
 
-| Component        | Details         |
+| Device           | Description     |
 | ---------------- | --------------- |
 | Firewall         | OPNsense        |
 | Client           | Ubuntu          |
 | LAN Network      | `10.10.10.0/24` |
-| OPNsense LAN     | `10.10.10.1`    |
+| OPNsense LAN IP  | `10.10.10.1`    |
+| Ubuntu Client IP | `10.10.10.167`  |
 | Test Destination | `1.1.1.1`       |
 | HTTP             | TCP port `80`   |
 | HTTPS            | TCP port `443`  |
@@ -36,112 +28,90 @@ During the lab, I created firewall rules to:
 ### Network Diagram
 
 ```text
-                    Internet
-                       |
-                       |
-                OPNsense Firewall
-                WAN: 10.0.3.x
-                LAN: 10.10.10.1
-                       |
-                       |
-                 10.10.10.0/24
-                       |
-                       |
-                  Ubuntu Client
-                  10.10.10.x
+                     Internet
+                         |
+                  OPNsense Firewall
+                  WAN: 10.0.3.x
+                  LAN: 10.10.10.1
+                         |
+                   10.10.10.0/24
+                         |
+                    Ubuntu Client
+                    10.10.10.x
 ```
 
 ---
 
 ## Lab Objectives
 
-The objectives of this lab were to:
-
 1. Configure OPNsense firewall rules.
 2. Understand firewall rule order.
 3. Block specific ICMP traffic.
 4. Block outbound HTTP traffic.
-5. Confirm that HTTPS was still allowed.
+5. Confirm HTTPS is still allowed.
 6. Examine firewall logs.
 7. Observe network traffic using Wireshark.
-8. Understand the role of outbound NAT.
+8. Understand outbound NAT.
 9. Restore the firewall configuration after testing.
 
 ---
 
 # 1. Baseline Connectivity
 
-Before creating the blocking rules, I tested the network to make sure the client had normal connectivity.
+Before creating the blocking rules, I tested the network to make sure the connection was working normally.
 
-### Ping the OPNsense Gateway
+### Gateway Test
 
 ```bash
 ping -c 4 10.10.10.1
 ```
 
-The gateway responded successfully.
+The ping to the OPNsense LAN gateway was successful.
 
-### Ping the Internet
+### Internet Ping Test
 
 ```bash
 ping -c 4 1.1.1.1
 ```
 
-The ping worked before the ICMP blocking rule was enabled.
+The ping was successful before the ICMP blocking rule was enabled.
 
-### Test HTTP
+### HTTP Test
 
 ```bash
 curl --max-time 10 -I http://example.com
 ```
 
-HTTP worked during the baseline test.
+HTTP traffic was working before the blocking rule was created.
 
-### Test HTTPS
+### HTTPS Test
 
 ```bash
 curl --max-time 10 -I https://example.com
 ```
 
-HTTPS also worked.
-
-These tests confirmed that the network was working before the firewall restrictions were introduced.
-
-**Evidence:** `SCREENSHOTS/01-baseline-connectivity.png`
+HTTPS traffic was also working before the blocking rules were enabled.
 
 ---
 
 # 2. Firewall Rule – Block ICMP
 
-I created the following rule in:
+I created a firewall rule in:
 
 **Firewall → Rules → LAN**
 
-### Rule Name
+The rule was configured as follows:
 
-```text
-LAB2 BLOCK ICMP TO 1.1.1.1
-```
+* **Name:** `LAB2 BLOCK ICMP TO 1.1.1.1`
+* **Action:** Block
+* **Interface:** LAN
+* **Direction:** In
+* **Protocol:** ICMP
+* **Source:** LAN net
+* **Destination:** `1.1.1.1`
+* **Logging:** Enabled
 
-### Configuration
-
-| Setting     | Value     |
-| ----------- | --------- |
-| Action      | Block     |
-| Interface   | LAN       |
-| Direction   | In        |
-| Protocol    | ICMP      |
-| Source      | LAN net   |
-| Destination | `1.1.1.1` |
-| Logging     | Enabled   |
-
-The rule was placed above the general LAN allow rule.
-
-### Why?
-
-OPNsense checks firewall rules from top to bottom. Therefore, the specific block rule needs to be above the broad allow rule.
-
-**Evidence:** `SCREENSHOTS/02-icmp-block-rule.png`
+I placed this rule above the general LAN allow rule.
 
 ---
 
@@ -153,40 +123,29 @@ I tested the rule from the Ubuntu client:
 ping -c 4 1.1.1.1
 ```
 
-The traffic was blocked and the client did not receive normal replies.
+After the rule was enabled, the normal ping replies were blocked.
 
-This confirmed that the ICMP firewall rule was working.
-
-**Evidence:** `SCREENSHOTS/03-icmp-block-test.png`
+This confirmed that the OPNsense firewall rule was working.
 
 ---
 
 # 4. Firewall Rule – Block Outbound HTTP
 
-The second rule was created to block normal HTTP traffic.
+I created a second rule to block HTTP traffic.
 
-### Rule Name
+The rule was configured as:
 
-```text
-LAB2 BLOCK OUTBOUND HTTP
-```
+* **Name:** `LAB2 BLOCK OUTBOUND HTTP`
+* **Action:** Block
+* **Interface:** LAN
+* **Direction:** In
+* **Protocol:** TCP
+* **Source:** LAN net
+* **Destination:** Any
+* **Destination Port:** `80`
+* **Logging:** Enabled
 
-### Configuration
-
-| Setting          | Value   |
-| ---------------- | ------- |
-| Action           | Block   |
-| Interface        | LAN     |
-| Direction        | In      |
-| Protocol         | TCP     |
-| Source           | LAN net |
-| Destination      | Any     |
-| Destination Port | `80`    |
-| Logging          | Enabled |
-
-The rule was also placed above the broad LAN allow rule.
-
-**Evidence:** `SCREENSHOTS/04-http-block-rule.png`
+The rule was placed above the broad LAN allow rule.
 
 ---
 
@@ -198,13 +157,9 @@ I tested HTTP using:
 curl --max-time 10 -I http://example.com
 ```
 
-The connection was blocked or failed to complete.
+The HTTP request was blocked and timed out.
 
-This confirmed that TCP port `80` traffic was being blocked.
-
-In Wireshark, I also observed **TCP retransmissions**, showing that the connection was trying again because it was not getting a successful response.
-
-**Evidence:** `SCREENSHOTS/05-http-block-test.png`
+In Wireshark, I could see TCP retransmissions. This showed that the client was trying to send the HTTP traffic, but the connection was not being completed because the firewall was blocking TCP port `80`.
 
 ---
 
@@ -216,88 +171,60 @@ I then tested HTTPS:
 curl --max-time 10 -I https://example.com
 ```
 
-The HTTPS connection worked successfully and returned **HTTP/2 200**.
+HTTPS worked successfully and returned an `HTTP/2 200` response.
 
-This was expected because HTTPS uses TCP port `443`, while the firewall rule was only blocking TCP port `80`.
-
-```text
-HTTP  → TCP 80  → BLOCKED
-HTTPS → TCP 443 → ALLOWED
-```
-
-**Evidence:** `SCREENSHOTS/06-https-allowed-test.png`
+This showed that blocking TCP port `80` did not block TCP port `443`.
 
 ---
 
 # 7. Why Blocking ICMP Did Not Block HTTPS
 
-The ICMP rule only affected ICMP traffic.
+The ICMP rule only blocks ICMP traffic.
 
-Ping uses ICMP:
+Ping uses **ICMP**, while HTTPS uses **TCP port 443**.
 
-```text
-ping → ICMP
-```
+Therefore:
 
-HTTPS uses TCP:
+* ICMP → blocked
+* TCP 443 → allowed
 
-```text
-HTTPS → TCP 443
-```
-
-Therefore, blocking ICMP did not stop HTTPS.
-
-### In my own words
-
-The firewall was only blocking ping traffic. HTTPS uses TCP instead of ICMP, so the HTTPS connection could still pass through the firewall.
+This showed that firewall rules can be used to control different types of traffic separately.
 
 ---
 
 # 8. Why Rule Order Matters
 
-OPNsense processes rules from the top down.
+OPNsense checks firewall rules from top to bottom.
 
-A broad rule such as:
+The specific blocking rules must be placed above the broad allow rule.
+
+For example:
 
 ```text
-Allow LAN net → Any
+LAB2 BLOCK ICMP TO 1.1.1.1
+LAB2 BLOCK OUTBOUND HTTP
+Default allow LAN to any
 ```
 
-can allow a large amount of traffic.
-
-Therefore, the specific block rules had to be placed above it.
-
-### In simple words
-
-The firewall reads the rules from the top. If the general allow rule comes first, it can allow the traffic before the firewall reaches my specific block rule.
+If the broad allow rule comes first, the traffic could be allowed before OPNsense reaches the specific block rule.
 
 ---
 
 # 9. Firewall Logs
 
-Logging was enabled on the blocking rules.
+I enabled logging on the blocking rules.
 
-The logs helped confirm that the traffic matched the firewall rules.
+The firewall logs helped me confirm that traffic was matching the rules and being blocked.
 
-Five useful packet attributes for understanding a firewall decision are:
-
-1. **Source IP address** – where the traffic is coming from.
-2. **Destination IP address** – where the traffic is going.
-3. **Protocol** – for example, TCP, UDP, or ICMP.
-4. **Port number** – for example, port 80 for HTTP and port 443 for HTTPS.
-5. **Direction/interface** – where the traffic is entering or passing through the firewall.
-
-These details help me understand **why the firewall allowed or blocked the traffic**.
-
-**Evidence:** `SCREENSHOTS/07-firewall-logs.png`
+This was useful because it gave me evidence that the firewall was actually processing the traffic according to the rules I created.
 
 ---
 
 # 10. Packet Capture
 
-Wireshark was used to observe network traffic.
+I used Wireshark on the Ubuntu client to observe the network traffic.
 
-The packet capture helped identify different types of traffic, including:
+I observed different types of packets, including:
 
 * ARP
 * ICMP
@@ -306,9 +233,7 @@ The packet capture helped identify different types of traffic, including:
 * HTTP
 * HTTPS
 
-Packet capture provided additional evidence of what was happening on the network.
-
-**Evidence:** `SCREENSHOTS/08-wireshark-packet-capture.png`
+During the HTTP blocking test, I observed TCP retransmissions. This helped me understand what happens to traffic when a firewall rule blocks the connection.
 
 ---
 
@@ -320,72 +245,82 @@ The Ubuntu client uses a private IP address:
 10.10.10.167
 ```
 
-Outbound NAT allows the client to access the Internet by translating its private IP address through the OPNsense WAN address.
+This private address cannot directly communicate with the public Internet.
 
-```text
-Ubuntu Client
-10.10.10.167
-      |
-      v
-OPNsense LAN
-10.10.10.1
-      |
-      | NAT
-      v
-OPNsense WAN
-10.0.3.x
-      |
-      v
-Internet
-```
+OPNsense performs outbound NAT by translating the private LAN address when traffic goes out through the WAN interface.
 
-### In simple words
-
-Outbound NAT allows the private IP address of the client to communicate with the Internet by translating the address as the traffic leaves the firewall.
-
-OPNsense acts like a middleman between my private LAN computer and the Internet.
+In my own simple words, **OPNsense acts like a middleman between my private LAN computer and the Internet.**
 
 ---
 
-# 12. Restoration
+# 12. Problems Encountered
 
-After completing the tests, I restored the firewall.
+During the lab, I experienced a few problems while configuring and testing the firewall rules.
+
+### 1. Understanding the Firewall Rule Order
+
+At first, I had to understand why the specific blocking rules needed to be placed above the general allow rule.
+
+I learned that OPNsense checks the rules from top to bottom. If the broad allow rule is above the blocking rule, the traffic may be allowed before reaching the block rule.
+
+### 2. Understanding Why Different Traffic Behaved Differently
+
+I initially had to understand why blocking ICMP did not stop HTTPS.
+
+After testing, I understood that ping uses ICMP, while HTTPS uses TCP port `443`. Therefore, a rule blocking ICMP does not automatically block HTTPS.
+
+### 3. Confirming the HTTP Block
+
+When I blocked HTTP, the `curl` command did not simply show a clear "blocked" message. Instead, the connection timed out.
+
+I used Wireshark to check what was happening and observed TCP retransmissions. This helped me confirm that the traffic was being blocked.
+
+### 4. Making Sure the Rules Were Applied
+
+After creating or changing firewall rules, I needed to make sure the changes were applied before testing again.
+
+I learned that creating a rule is not enough; I must apply the changes and then perform the test again.
+
+### 5. Restoring the Firewall Rules
+
+After completing the tests, I needed to restore the normal network configuration.
+
+I disabled the temporary blocking rules and applied the changes. I then tested the connection again to make sure ping, HTTP, and HTTPS were working normally.
+
+These problems helped me understand how firewall rules work in a practical environment instead of only learning the theory.
+
+---
+
+# 13. Restoration
+
+After completing the tests, I restored the firewall configuration.
 
 I went to:
 
 **Firewall → Rules → LAN**
 
-I disabled:
+I disabled the following temporary rules:
 
-```text
-LAB2 BLOCK ICMP TO 1.1.1.1
-```
-
-and:
-
-```text
-LAB2 BLOCK OUTBOUND HTTP
-```
-
-I did not delete the rules because they were required as evidence.
+* `LAB2 BLOCK ICMP TO 1.1.1.1`
+* `LAB2 BLOCK OUTBOUND HTTP`
 
 I then applied the changes.
 
-**Evidence:** `SCREENSHOTS/09-disabled-rules.png`
+I disabled the rules instead of deleting them so that I could keep them for future testing and evidence.
 
 ---
 
-# 13. Final Restoration Tests
+# 14. Final Restoration Tests
 
-After disabling the blocking rules, I tested the connections again.
+After disabling the temporary rules, I tested the network again.
 
-### ICMP
+### Ping
 
 ```bash
 ping -c 4 1.1.1.1
 ```
 
-The ping worked again.
+Ping worked again.
 
 ### HTTP
 
@@ -401,138 +336,110 @@ HTTP worked again.
 curl --max-time 10 -I https://example.com
 ```
 
-HTTPS also worked.
+HTTPS continued to work.
 
-This confirmed that the laboratory had been successfully restored.
-
-**Evidence:** `SCREENSHOTS/10-final-restored-tests.png`
+This confirmed that the temporary firewall rules had been successfully disabled.
 
 ---
 
-# 14. Test Results
+# 15. Test Results
 
-| Test           | Baseline  | Block Rules Enabled | Restored  |
-| -------------- | --------- | ------------------- | --------- |
-| Ping `1.1.1.1` | ✅ Allowed | ❌ Blocked           | ✅ Allowed |
-| HTTP TCP 80    | ✅ Allowed | ❌ Blocked           | ✅ Allowed |
-| HTTPS TCP 443  | ✅ Allowed | ✅ Allowed           | ✅ Allowed |
+| Test           | Baseline | Block Rules Enabled | Restored |
+| -------------- | -------- | ------------------- | -------- |
+| Ping `1.1.1.1` | Allowed  | Blocked             | Allowed  |
+| HTTP TCP 80    | Allowed  | Blocked             | Allowed  |
+| HTTPS TCP 443  | Allowed  | Allowed             | Allowed  |
 
 ---
 
-# 15. Key Lessons Learned
+# 16. Key Lessons Learned
 
 From this lab, I learned that:
 
 * Firewall rules control network traffic.
 * OPNsense checks rules from top to bottom.
-* Specific rules should be placed above broad rules.
+* Specific blocking rules should be placed above broad allow rules.
 * ICMP and TCP are different protocols.
-* HTTP uses TCP port 80.
-* HTTPS uses TCP port 443.
+* HTTP uses TCP port `80`.
+* HTTPS uses TCP port `443`.
 * Blocking one port does not automatically block another port.
-* Firewall logs help confirm blocked traffic.
-* Wireshark helps observe network packets.
-* NAT allows private IP addresses to communicate with the Internet.
-* Firewall rules should be tested after configuration changes.
-* Temporary rules can be disabled instead of deleted when evidence needs to be preserved.
+* Firewall logs can provide evidence of blocked traffic.
+* Wireshark can help me see what is happening to network traffic.
+* Outbound NAT allows private IP addresses to communicate with the Internet.
+* Firewall rules should be tested after making changes.
+* Temporary rules can be disabled instead of deleted so they can be reused for future testing.
 
 ---
 
-# 16. Analysis Questions
+# 17. Analysis Questions
 
 ### 1. Why must the specific block rules be placed above the broad allow rule?
 
-The firewall checks the rules **from top to bottom**. If the block rule is below the general allow rule, the traffic may be allowed before the firewall reaches the block rule.
-
-So, I placed the specific block rules **above the “Default allow LAN to any” rule** so that the traffic I wanted to block would be stopped first.
-
----
+The firewall checks rules from top to bottom. If the broad allow rule comes first, the traffic may be allowed before the firewall reaches the specific block rule. That is why the specific block rules should come first.
 
 ### 2. Which five packet attributes are most useful when explaining a firewall decision?
 
-The five important things are:
+The five useful attributes are:
 
-1. **Source IP** – where the traffic is coming from.
-2. **Destination IP** – where the traffic is going.
-3. **Protocol** – for example, TCP, UDP, or ICMP.
-4. **Port number** – for example, port 80 for HTTP and port 443 for HTTPS.
-5. **Direction/interface** – where the traffic is entering or passing through the firewall.
+1. Source IP
+2. Destination IP
+3. Protocol
+4. Port number
+5. Direction/interface
 
-These help me understand **why the firewall allowed or blocked the traffic**.
-
----
+These help explain where the traffic is coming from, where it is going, what type of traffic it is, and how the firewall handles it.
 
 ### 3. Why did blocking ICMP not block HTTPS?
 
-Blocking ICMP did not block HTTPS because they are **different types of traffic**.
+The ICMP rule only blocks ICMP traffic. Ping uses ICMP, while HTTPS uses TCP port `443`.
 
-My rule was only blocking **ICMP traffic to 1.1.1.1**. HTTPS uses **TCP on port 443**, so it was not affected by the ICMP block.
-
-I tested this and the ping failed, but HTTPS still worked.
-
----
+Therefore, the ping was blocked but HTTPS was still allowed.
 
 ### 4. What difference did you observe between the blocked TCP port 80 traffic and permitted TCP port 443 traffic?
 
-When I tested **HTTP on port 80**, the connection was blocked and the request timed out.
+The TCP port `80` traffic was blocked and the HTTP connection timed out. Wireshark also showed TCP retransmissions.
 
-In Wireshark, I also saw **TCP retransmissions**, showing that the connection was trying again because it was not getting a successful response.
+TCP port `443` was allowed, and the HTTPS request worked successfully and returned an `HTTP/2 200` response.
 
-When I tested **HTTPS on port 443**, it worked successfully and returned **HTTP/2 200**.
+### 5. What role does outbound NAT play when the Ubuntu client accesses the Internet?
 
-So, **port 80 was blocked while port 443 was allowed**.
+The Ubuntu client has a private IP address, `10.10.10.167`. Outbound NAT changes the private address when the traffic leaves through the OPNsense WAN interface.
 
----
+In simple words, OPNsense acts as the middleman between my private LAN computer and the Internet.
 
-### 5. What role does outbound NAT play when `icdfa-nslab-client-v1` uses a private IPv4 address?
+### 6. Why should the temporary firewall rules be restored after the lab?
 
-My client has a private IP address, `10.10.10.167`.
+The rules were created for testing. Restoring the firewall prevents the temporary blocks from causing problems later.
 
-Outbound NAT allows the client to **access the Internet by translating its private IP address through the OPNsense WAN address**.
-
-In simple terms, OPNsense acts like a middleman between my private LAN computer and the Internet.
+It also makes the lab environment ready for the next test and keeps the network working normally.
 
 ---
 
-### 6. Why is restoring the original state an important part of a controlled security laboratory?
+# 18. Evidence
 
-Restoring the original settings is important because the changes I made were mainly for testing.
+The following screenshots should be included in the `SCREENSHOTS` folder:
 
-After the lab, restoring the original state makes sure that my temporary firewall rules **do not cause problems later**.
-
-It also makes the lab easier to repeat and ensures that the network is left in a **safe and expected condition**.
-
----
-
-# 17. Evidence
-
-The following screenshots are included in the `SCREENSHOTS` folder:
-
-| No. | Evidence                 | File                              |
-| --: | ------------------------ | --------------------------------- |
-|   1 | Baseline connectivity    | `01-baseline-connectivity.png`    |
-|   2 | ICMP block rule          | `02-icmp-block-rule.png`          |
-|   3 | ICMP blocked test        | `03-icmp-block-test.png`          |
-|   4 | HTTP block rule          | `04-http-block-rule.png`          |
-|   5 | HTTP blocked test        | `05-http-block-test.png`          |
-|   6 | HTTPS allowed test       | `06-https-allowed-test.png`       |
-|   7 | Firewall logs            | `07-firewall-logs.png`            |
-|   8 | Wireshark packet capture | `08-wireshark-packet-capture.png` |
-|   9 | Disabled rules           | `09-disabled-rules.png`           |
-|  10 | Final restored tests     | `10-final-restored-tests.png`     |
+```text
+01-baseline-connectivity.png
+02-icmp-block-rule.png
+03-icmp-block-test.png
+04-http-block-rule.png
+05-http-block-test.png
+06-https-allowed-test.png
+07-firewall-logs.png
+08-wireshark-packet-capture.png
+09-disabled-rules.png
+10-final-restored-tests.png
+```
 
 ---
 
-# 18. Conclusion
+# 19. Conclusion
 
-This lab gave me practical experience configuring and testing firewall rules using OPNsense.
+This lab helped me understand how OPNsense firewall rules control network traffic.
 
-I created a rule to block ICMP traffic to `1.1.1.1` and another rule to block outbound HTTP traffic on TCP port `80`.
+I successfully created rules to block ICMP traffic to `1.1.1.1` and outbound HTTP traffic on TCP port `80`. I also confirmed that HTTPS traffic on TCP port `443` continued to work.
 
-The tests showed that the firewall could block specific traffic while allowing other traffic. For example, blocking HTTP did not block HTTPS because HTTPS uses TCP port `443`.
+Using firewall logs and Wireshark helped me see evidence of the traffic being blocked. I also learned the importance of firewall rule order and outbound NAT.
 
-I also used firewall logs and packet capture to understand and verify network traffic.
-
-Finally, I disabled the temporary blocking rules and confirmed that ping, HTTP, and HTTPS worked again.
-
-This lab helped me understand how firewall rules, protocols, ports, rule order, logging, packet capture, and NAT work together to control network communication.
+Finally, I restored the temporary rules and confirmed that the network was working normally again.
